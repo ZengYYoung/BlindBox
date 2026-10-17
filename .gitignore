@@ -1,0 +1,38 @@
+# Local credentials (only templates are versioned)
+.env
+.env.*
+!.env.example
+
+# Dependencies, build output and uploaded files
+**/node_modules/
+**/target/
+**/dist/
+**/dist-ssr/
+**/uploads/
+**/__pycache__/
+*.py[cod]
+
+# Local databases, dumps and historical data exports
+*.sqlite
+*.sqlite-*
+*.sqlite3
+*.sqlite3-*
+*.db
+*.db-*
+*.dump
+*.sql.gz
+**/backup.json
+
+# Recovery backups and private key material
+.upgrade-backup/
+*.bundle
+*.pem
+*.key
+*.p12
+*.jks
+
+# Editor and operating-system files
+**/.idea/
+**/.vscode/
+.DS_Store
+*.log

@@ -1,0 +1,61 @@
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  tomcat:
+    threads:
+      max: 80
+      min-spare: 8
+    accept-count: 100
+    max-connections: 512
+    connection-timeout: 5s
+spring:
+  datasource:
+    url: ${DB_URL:jdbc:mysql://localhost:3306/blindbox?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai}
+    username: ${DB_USER:blindbox}
+    password: ${DB_PASSWORD}
+    hikari:
+      maximum-pool-size: ${DB_POOL_SIZE:16}
+      minimum-idle: 2
+      connection-timeout: 3000
+  flyway:
+    enabled: true
+    baseline-on-migrate: false
+  sql:
+    init:
+      mode: never
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6379}
+      password: ${REDIS_PASSWORD:}
+      timeout: 1s
+      connect-timeout: 1s
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 6MB
+mybatis:
+  configuration:
+    map-underscore-to-camel-case: true
+    default-statement-timeout: 5
+app:
+  jwt-secret: ${JWT_SECRET}
+  jwt-hours: ${JWT_HOURS:2}
+  demo-recharge: ${DEMO_RECHARGE_ENABLED:false}
+  http-max-inflight: ${HTTP_MAX_INFLIGHT:64}
+  draw-max-inflight: ${DRAW_MAX_INFLIGHT:8}
+  draw-max-per-pool: ${DRAW_MAX_PER_POOL:1}
+  entry-read-per-minute: ${ENTRY_READ_PER_MINUTE:6000}
+  entry-write-per-minute: ${ENTRY_WRITE_PER_MINUTE:120}
+  entry-auth-per-minute: ${ENTRY_AUTH_PER_MINUTE:20}
+  rate-limit-enabled: ${RATE_LIMIT_ENABLED:true}
+  upload-dir: ${UPLOAD_DIR:./uploads}
+  cors-origins: ${CORS_ORIGINS:http://localhost:5173}
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics
+  endpoint:
+    health:
+      show-details: never

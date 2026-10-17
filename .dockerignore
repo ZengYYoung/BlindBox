@@ -1,0 +1,12 @@
+**/node_modules
+**/dist
+**/target
+**/.git
+**/.idea
+**/.env
+**/.env.local
+**/.env.production
+**/uploads
+.upgrade-backup
+BlindBox-backend
+docs/screenshots

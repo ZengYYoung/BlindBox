@@ -1,0 +1,4 @@
+-- Legacy standalone schema retired.
+-- Flyway db/migration/V1..V4 is the only authoritative schema.
+-- Developer fixtures live at ../../../scripts/dev-seed.sql from the repository root.
+-- spring.sql.init.mode=never; do not execute old fixed-probability seeds.
