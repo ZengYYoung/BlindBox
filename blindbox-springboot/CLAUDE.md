@@ -5,7 +5,7 @@ Idempotency queries are nonlocking and must be the first consistent reads AFTER 
 Database transactions lock user then box, verify update counts and write immutable order snapshots plus wallet/stock ledgers.
 Admission is outside DrawTransactionService; release only after the Spring transaction proxy returns. Detail is a single nonlocking snapshot query. Catalog caches metadata only; stock/status/price are fetched live in a batch. Draw/restock do not invalidate metadata. Metadata invalidation runs asynchronously after commit.
 Redis is not the authoritative inventory or balance store. No stock pre-initialization on startup.
-Read ../docs/开发文档.md, ../docs/接入与部署指南.md and ../docs/项目介绍与面试指南.md.
+Read ../docs/关键技术文档.md, ../docs/接入与部署指南.md and ../docs/项目介绍与面试指南.md. Outdated documents are archived under ../outdate/ and are not current implementation guidance.
 Offline tests use mocks and an actual Spring transaction proxy with a test transaction manager, no live database/Redis. Do not deploy or connect infrastructure without user authorization.
 Build: mvn -s .mvn/settings.xml test / package. Configuration via environment; scripts/run-backend.py safely loads .env.
 Do not commit credentials, tokens, uploaded images, database dumps or .upgrade-backup.
