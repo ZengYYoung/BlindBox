@@ -12,7 +12,7 @@ parser.add_argument('--jar', action='store_true')
 args = parser.parse_args()
 allowed = {'DB_URL','DB_USER','DB_PASSWORD','DB_POOL_SIZE','REDIS_HOST','REDIS_PORT','REDIS_PASSWORD',
            'JWT_SECRET','JWT_HOURS','DEMO_RECHARGE_ENABLED','RATE_LIMIT_ENABLED','UPLOAD_DIR','CORS_ORIGINS','SERVER_PORT','HTTP_MAX_INFLIGHT','DRAW_MAX_INFLIGHT','DRAW_MAX_PER_POOL',
-           'ENTRY_READ_PER_MINUTE','ENTRY_WRITE_PER_MINUTE','ENTRY_AUTH_PER_MINUTE'}
+           'ENTRY_READ_PER_MINUTE','ENTRY_WRITE_PER_MINUTE','ENTRY_AUTH_PER_MINUTE','REDIS_CIRCUIT_FAILURE_THRESHOLD','REDIS_CIRCUIT_OPEN_MS'}
 environment = os.environ.copy()
 if not args.env.exists():
     parser.error('Create blindbox-springboot/.env from .env.example first.')

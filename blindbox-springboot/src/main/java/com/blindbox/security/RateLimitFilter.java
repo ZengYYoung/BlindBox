@@ -1,6 +1,7 @@
 package com.blindbox.security;
 
 import com.blindbox.common.Result;
+import com.blindbox.resilience.RedisCircuitBreaker;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.*;
 import jakarta.servlet.http.*;
@@ -12,10 +13,11 @@ import java.io.IOException;
 /** Per-user quota; authentication endpoints use the preceding IP limiter. */
 public class RateLimitFilter extends OncePerRequestFilter {
     private final StringRedisTemplate redis;
+    private final RedisCircuitBreaker circuit;
     private final ObjectMapper json;
     private final boolean enabled;
-    public RateLimitFilter(StringRedisTemplate redis, ObjectMapper json, boolean enabled) {
-        this.redis = redis; this.json = json; this.enabled = enabled;
+    public RateLimitFilter(StringRedisTemplate redis, ObjectMapper json, boolean enabled, RedisCircuitBreaker circuit) {
+        this.redis = redis; this.json = json; this.enabled = enabled; this.circuit = circuit;
     }
     @Override protected void doFilterInternal(HttpServletRequest request, HttpServletResponse response, FilterChain chain)
         throws ServletException, IOException {
@@ -31,7 +33,7 @@ public class RateLimitFilter extends OncePerRequestFilter {
             path.equals("/api/images") ? "upload" : "write";
         int limit = switch (scope) { case "draw" -> 10; case "recharge" -> 5; case "upload" -> 6; default -> 30; };
         long count;
-        try { count = RedisWindow.count(redis, "blindbox:limit:" + scope + ":user:" + principal.id(), limit); }
+        try { count = circuit.execute(() -> RedisWindow.count(redis, "blindbox:limit:" + scope + ":user:" + principal.id(), limit)); }
         catch (Exception e) { error(response, 503, "限流服务暂不可用，请稍后重试", 1); return; }
         if (count > limit) { error(response, 429, "操作过于频繁，请稍后重试", 60); return; }
         chain.doFilter(request, response);

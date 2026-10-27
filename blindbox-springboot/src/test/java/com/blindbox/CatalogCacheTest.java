@@ -1,6 +1,7 @@
 package com.blindbox;
 
 import com.blindbox.core.CatalogCache;
+import com.blindbox.resilience.RedisCircuitBreaker;
 import com.blindbox.common.BusinessException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -20,6 +21,7 @@ class CatalogCacheTest {
     Map<String,String> store;
     Queue<Runnable> tasks;
     CatalogCache cache;
+    private RedisCircuitBreaker circuit() {return new RedisCircuitBreaker("cache",1,Duration.ofSeconds(1),new SimpleMeterRegistry());}
     @BeforeEach void setup() {
         redis=mock(StringRedisTemplate.class);
         @SuppressWarnings("unchecked") ValueOperations<String,String> ops=mock(ValueOperations.class);
@@ -28,7 +30,7 @@ class CatalogCacheTest {
         when(values.get(anyString())).thenAnswer(inv->store.get(inv.getArgument(0)));
         doAnswer(inv->{store.put(inv.getArgument(0),inv.getArgument(1));return null;})
             .when(values).set(anyString(),anyString(),any(Duration.class));
-        cache=new CatalogCache(redis,new ObjectMapper(),tasks::add,new SimpleMeterRegistry());
+        cache=new CatalogCache(redis,new ObjectMapper(),tasks::add,new SimpleMeterRegistry(), circuit());
     }
     @AfterEach void cleanup() {
         if(TransactionSynchronizationManager.isSynchronizationActive()) TransactionSynchronizationManager.clearSynchronization();
@@ -74,7 +76,7 @@ class CatalogCacheTest {
     @Test void invalidationFailureAndRejectedQueueDoNotEscapeToCommittedCaller() {
         when(values.increment(anyString())).thenThrow(new RuntimeException("Redis unavailable"));
         cache.invalidateAfterCommit();assertDoesNotThrow(()->tasks.remove().run());
-        CatalogCache full=new CatalogCache(redis,new ObjectMapper(),task->{throw new RejectedExecutionException();},new SimpleMeterRegistry());
+        CatalogCache full=new CatalogCache(redis,new ObjectMapper(),task->{throw new RejectedExecutionException();},new SimpleMeterRegistry(), circuit());
         assertDoesNotThrow(full::invalidateAfterCommit);
     }
     @Test void redisFailureFallsBackAndCooldownAvoidsRepeatedNetworkCalls() {

@@ -1,6 +1,8 @@
 package com.blindbox.security;
 
 import com.blindbox.common.Result;
+import com.blindbox.resilience.RedisCircuitBreaker;
+import org.springframework.beans.factory.annotation.Qualifier;
 import io.micrometer.core.instrument.MeterRegistry;
 import com.blindbox.core.PlatformMapper;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -23,14 +25,15 @@ public class SecurityConfig {
     @Bean PasswordEncoder passwordEncoder() {return new BCryptPasswordEncoder();}
     @Bean SecurityFilterChain security(HttpSecurity http,JwtService jwt,PlatformMapper db,ObjectMapper json,
         StringRedisTemplate redis, MeterRegistry metrics,
+        @Qualifier("redisLimitCircuit") RedisCircuitBreaker circuit,
         @Value("${app.rate-limit-enabled:true}") boolean limited,
         @Value("${app.http-max-inflight:64}") int maxActive,
         @Value("${app.entry-read-per-minute:6000}") int readLimit,
         @Value("${app.entry-write-per-minute:120}") int writeLimit,
         @Value("${app.entry-auth-per-minute:20}") int authLimit) throws Exception {
-        IngressFilter ingress=new IngressFilter(redis,json,limited,metrics,maxActive,readLimit,writeLimit,authLimit);
+        IngressFilter ingress=new IngressFilter(redis,json,limited,metrics,maxActive,readLimit,writeLimit,authLimit,circuit);
         JwtFilter jwtFilter=new JwtFilter(jwt,db,json);
-        RateLimitFilter limitFilter=new RateLimitFilter(redis,json,limited);
+        RateLimitFilter limitFilter=new RateLimitFilter(redis,json,limited,circuit);
         return http.csrf(c->c.disable()).cors(c->{})
             .sessionManagement(s->s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
             .authorizeHttpRequests(a->a

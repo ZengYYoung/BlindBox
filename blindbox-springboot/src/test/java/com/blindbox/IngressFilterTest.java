@@ -1,6 +1,8 @@
 package com.blindbox;
 
 import com.blindbox.security.IngressFilter;
+import com.blindbox.resilience.RedisCircuitBreaker;
+import java.time.Duration;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
@@ -13,10 +15,11 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class IngressFilterTest {
+    private RedisCircuitBreaker circuit() {return new RedisCircuitBreaker("limit",1,Duration.ofSeconds(1),new SimpleMeterRegistry());}
     @Test void ipQuotaRejectsBeforeJwtOrDatabaseChain() throws Exception {
         StringRedisTemplate redis=mock(StringRedisTemplate.class);FilterChain chain=mock(FilterChain.class);
         when(redis.execute(any(RedisScript.class),anyList(),any(Object[].class))).thenReturn(21L);
-        IngressFilter filter=new IngressFilter(redis,new ObjectMapper(),true,new SimpleMeterRegistry(),64,6000,120,20);
+        IngressFilter filter=new IngressFilter(redis,new ObjectMapper(),true,new SimpleMeterRegistry(),64,6000,120,20,circuit());
         MockHttpServletResponse response=new MockHttpServletResponse();
         filter.doFilter(new MockHttpServletRequest("POST","/api/auth/login"),response,chain);
         assertEquals(429,response.getStatus());assertEquals("60",response.getHeader("Retry-After"));
@@ -25,7 +28,7 @@ class IngressFilterTest {
     @Test void redisFailureAllowsBoundedReadsButRejectsWrites() throws Exception {
         StringRedisTemplate redis=mock(StringRedisTemplate.class);
         when(redis.execute(any(RedisScript.class),anyList(),any(Object[].class))).thenThrow(new RuntimeException());
-        IngressFilter filter=new IngressFilter(redis,new ObjectMapper(),true,new SimpleMeterRegistry(),1,6000,120,20);
+        IngressFilter filter=new IngressFilter(redis,new ObjectMapper(),true,new SimpleMeterRegistry(),1,6000,120,20,circuit());
         FilterChain read=mock(FilterChain.class);
         filter.doFilter(new MockHttpServletRequest("GET","/api/blindboxes"),new MockHttpServletResponse(),read);
         verify(read).doFilter(any(),any());
@@ -35,10 +38,11 @@ class IngressFilterTest {
         FilterChain next=mock(FilterChain.class);
         filter.doFilter(new MockHttpServletRequest("GET","/api/blindboxes"),new MockHttpServletResponse(),next);
         verify(next).doFilter(any(),any());
+        verify(redis,times(1)).execute(any(RedisScript.class),anyList(),any(Object[].class));
     }
     @Test void slowRequestCannotExhaustAllSlotsAndPermitReturnsAfterFailure() throws Exception {
         StringRedisTemplate redis=mock(StringRedisTemplate.class);
-        IngressFilter filter=new IngressFilter(redis,new ObjectMapper(),false,new SimpleMeterRegistry(),1,6000,120,20);
+        IngressFilter filter=new IngressFilter(redis,new ObjectMapper(),false,new SimpleMeterRegistry(),1,6000,120,20,circuit());
         ExecutorService worker=Executors.newSingleThreadExecutor();
         CountDownLatch inside=new CountDownLatch(1),release=new CountDownLatch(1);
         try {
@@ -61,5 +65,17 @@ class IngressFilterTest {
             filter.doFilter(new MockHttpServletRequest("GET","/api/blindboxes"),new MockHttpServletResponse(),next);
             verify(next).doFilter(any(),any());
         } finally {release.countDown();worker.shutdownNow();}
+    }
+    @Test void rateRejectionDoesNotTripRedisCircuit() throws Exception {
+        StringRedisTemplate redis=mock(StringRedisTemplate.class);
+        when(redis.execute(any(RedisScript.class),anyList(),any(Object[].class))).thenReturn(21L,1L);
+        IngressFilter filter=new IngressFilter(redis,new ObjectMapper(),true,new SimpleMeterRegistry(),2,6000,120,20,circuit());
+        MockHttpServletResponse first=new MockHttpServletResponse();
+        filter.doFilter(new MockHttpServletRequest("POST","/api/auth/login"),first,mock(FilterChain.class));
+        assertEquals(429,first.getStatus());
+        FilterChain read=mock(FilterChain.class);
+        filter.doFilter(new MockHttpServletRequest("GET","/api/blindboxes"),new MockHttpServletResponse(),read);
+        verify(read).doFilter(any(),any());
+        verify(redis,times(2)).execute(any(RedisScript.class),anyList(),any(Object[].class));
     }
 }

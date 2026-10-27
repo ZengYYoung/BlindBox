@@ -3,6 +3,7 @@ import com.blindbox.api.ApiController;
 import com.blindbox.core.*;
 import com.blindbox.core.Models.User;
 import com.blindbox.security.*;
+import com.blindbox.resilience.RedisCircuitConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -19,7 +20,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 @WebMvcTest(value=ApiController.class,properties="app.rate-limit-enabled=false",excludeAutoConfiguration=org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration.class)
-@Import({SecurityConfig.class,SecurityTest.MetricsConfig.class})
+@Import({SecurityConfig.class,SecurityTest.MetricsConfig.class,RedisCircuitConfig.class})
 class SecurityTest {
     @TestConfiguration static class MetricsConfig {
         @Bean MeterRegistry meterRegistry() { return new SimpleMeterRegistry(); }

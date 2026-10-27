@@ -2,6 +2,7 @@ package com.blindbox;
 import com.blindbox.api.ApiController;
 import com.blindbox.core.*;
 import com.blindbox.security.*;
+import com.blindbox.resilience.RedisCircuitConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
@@ -14,9 +15,9 @@ import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
-@WebMvcTest(value=ApiController.class,properties="app.rate-limit-enabled=true",
+@WebMvcTest(value=ApiController.class,properties={"app.rate-limit-enabled=true","app.redis-circuit-failure-threshold=100"},
  excludeAutoConfiguration=org.springframework.boot.autoconfigure.security.servlet.UserDetailsServiceAutoConfiguration.class)
-@Import({SecurityConfig.class,SecurityTest.MetricsConfig.class})
+@Import({SecurityConfig.class,SecurityTest.MetricsConfig.class,RedisCircuitConfig.class})
 class SecurityIngressTest {
     @Autowired MockMvc mvc;
     @MockBean PlatformMapper db;@MockBean UserService users;@MockBean CatalogService catalog;

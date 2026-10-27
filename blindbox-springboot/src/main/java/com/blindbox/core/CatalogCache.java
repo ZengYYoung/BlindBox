@@ -1,6 +1,7 @@
 package com.blindbox.core;
 
 import com.blindbox.common.BusinessException;
+import com.blindbox.resilience.RedisCircuitBreaker;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
@@ -29,42 +30,44 @@ public class CatalogCache {
     private final ReentrantLock[] loads = new ReentrantLock[64];
     private final AtomicBoolean scheduled = new AtomicBoolean();
     private final AtomicBoolean dirty = new AtomicBoolean();
-    private final AtomicLong retryRedisAfter = new AtomicLong();
+    private final RedisCircuitBreaker circuit;
 
     public CatalogCache(StringRedisTemplate redis, ObjectMapper json,
-                        @Qualifier("catalogInvalidationExecutor") Executor invalidations, MeterRegistry metrics) {
-        this.redis = redis; this.json = json; this.invalidations = invalidations; this.metrics = metrics;
+                        @Qualifier("catalogInvalidationExecutor") Executor invalidations, MeterRegistry metrics,
+                        @Qualifier("redisCacheCircuit") RedisCircuitBreaker circuit) {
+        this.redis = redis; this.json = json; this.invalidations = invalidations; this.metrics = metrics; this.circuit = circuit;
         for (int i = 0; i < loads.length; i++) loads[i] = new ReentrantLock();
     }
 
-    private boolean redisAvailable() { return System.nanoTime() >= retryRedisAfter.get(); }
-    private void redisFailed() {
-        retryRedisAfter.set(System.nanoTime() + TimeUnit.SECONDS.toNanos(1));
-        metrics.counter("blindbox.catalog.cache", "outcome", "redis_error").increment();
-    }
     private String key(String suffix) {
-        if (!redisAvailable()) return null;
         try {
-            String generation = redis.opsForValue().get(GENERATION);
-            if (generation == null) {
-                // Epoch initialization avoids reusing generation zero after eviction.
-                redis.opsForValue().setIfAbsent(GENERATION, Long.toString(System.currentTimeMillis()));
-                generation = redis.opsForValue().get(GENERATION);
-            }
-            return generation == null ? null : "blindbox:catalog:metadata:v2:" + generation + ":" + suffix;
-        } catch (Exception e) { redisFailed(); return null; }
+            return circuit.execute(() -> {
+                String generation = redis.opsForValue().get(GENERATION);
+                if (generation == null) {
+                    redis.opsForValue().setIfAbsent(GENERATION, Long.toString(System.currentTimeMillis()));
+                    generation = redis.opsForValue().get(GENERATION);
+                }
+                return generation == null ? null : "blindbox:catalog:metadata:v2:" + generation + ":" + suffix;
+            });
+        } catch (Exception e) { cacheFailure(e); return null; }
     }
     private Map<String, Object> get(String key) {
-        if (key == null || !redisAvailable()) return null;
+        if (key == null) return null;
         try {
-            String value = redis.opsForValue().get(key);
+            String value = circuit.execute(() -> redis.opsForValue().get(key));
             return value == null ? null : json.readValue(value, new TypeReference<Map<String, Object>>() {});
-        } catch (Exception e) { redisFailed(); return null; }
+        } catch (Exception e) { cacheFailure(e); return null; }
     }
     private void put(String key, Map<String, Object> value) {
-        if (key == null || !redisAvailable()) return;
-        try { redis.opsForValue().set(key, json.writeValueAsString(value), Duration.ofSeconds(120)); }
-        catch (Exception e) { redisFailed(); }
+        if (key == null) return;
+        try {
+            String encoded = json.writeValueAsString(value);
+            circuit.execute(() -> { redis.opsForValue().set(key, encoded, Duration.ofSeconds(120)); return null; });
+        } catch (Exception e) { cacheFailure(e); }
+    }
+    private void cacheFailure(Exception e) {
+        if (!(e instanceof RedisCircuitBreaker.OpenException))
+            metrics.counter("blindbox.catalog.cache", "outcome", "redis_error").increment();
     }
 
     /** Fixed stripes bound memory; contending misses wait at most 50ms without borrowing JDBC connections. */
@@ -115,10 +118,10 @@ public class CatalogCache {
             invalidations.execute(() -> {
                 dirty.set(false);
                 try {
-                    redis.opsForValue().increment(GENERATION);
+                    circuit.execute(() -> redis.opsForValue().increment(GENERATION));
                     metrics.counter("blindbox.catalog.invalidations", "outcome", "success").increment();
                 } catch (Exception e) {
-                    redisFailed();
+                    cacheFailure(e);
                     metrics.counter("blindbox.catalog.invalidations", "outcome", "error").increment();
                     log.warn("Catalog metadata invalidation unavailable; TTL bounds staleness to 120 seconds");
                 } finally {

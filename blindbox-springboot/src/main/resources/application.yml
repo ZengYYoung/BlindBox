@@ -48,6 +48,8 @@ app:
   entry-read-per-minute: ${ENTRY_READ_PER_MINUTE:6000}
   entry-write-per-minute: ${ENTRY_WRITE_PER_MINUTE:120}
   entry-auth-per-minute: ${ENTRY_AUTH_PER_MINUTE:20}
+  redis-circuit-failure-threshold: ${REDIS_CIRCUIT_FAILURE_THRESHOLD:1}
+  redis-circuit-open-ms: ${REDIS_CIRCUIT_OPEN_MS:1000}
   rate-limit-enabled: ${RATE_LIMIT_ENABLED:true}
   upload-dir: ${UPLOAD_DIR:./uploads}
   cors-origins: ${CORS_ORIGINS:http://localhost:5173}

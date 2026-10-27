@@ -1,6 +1,7 @@
 package com.blindbox.security;
 
 import com.blindbox.common.Result;
+import com.blindbox.resilience.RedisCircuitBreaker;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.MeterRegistry;
 import jakarta.servlet.*;
@@ -17,6 +18,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 /** Runs before JWT database lookup. Client forwarding headers are not trusted. */
 public class IngressFilter extends OncePerRequestFilter {
     private final StringRedisTemplate redis;
+    private final RedisCircuitBreaker circuit;
     private final ObjectMapper json;
     private final boolean limited;
     private final MeterRegistry metrics;
@@ -25,10 +27,10 @@ public class IngressFilter extends OncePerRequestFilter {
     private final int readLimit, writeLimit, authLimit;
 
     public IngressFilter(StringRedisTemplate redis, ObjectMapper json, boolean limited, MeterRegistry metrics,
-                         int maxActive, int readLimit, int writeLimit, int authLimit) {
+                         int maxActive, int readLimit, int writeLimit, int authLimit, RedisCircuitBreaker circuit) {
         if (maxActive < 1 || readLimit < 1 || writeLimit < 1 || authLimit < 1)
             throw new IllegalArgumentException("Invalid ingress limits");
-        this.redis = redis; this.json = json; this.limited = limited; this.metrics = metrics;
+        this.redis = redis; this.circuit = circuit; this.json = json; this.limited = limited; this.metrics = metrics;
         permits = new Semaphore(maxActive);
         this.readLimit = readLimit; this.writeLimit = writeLimit; this.authLimit = authLimit;
         metrics.gauge("blindbox.http.active", active);
@@ -52,9 +54,10 @@ public class IngressFilter extends OncePerRequestFilter {
             if (limited) {
                 long count;
                 try {
-                    count = RedisWindow.count(redis, "blindbox:limit:entry:" + scope + ":" + hash(request.getRemoteAddr()), limit);
+                    count = circuit.execute(() -> RedisWindow.count(redis, "blindbox:limit:entry:" + scope + ":" + hash(request.getRemoteAddr()), limit));
                 } catch (Exception e) {
-                    metrics.counter("blindbox.http.entry.redis_errors", "scope", scope).increment();
+                    if (!(e instanceof RedisCircuitBreaker.OpenException))
+                        metrics.counter("blindbox.http.entry.redis_errors", "scope", scope).increment();
                     if (!read) { reject(response, 503, "redis", "入口限流服务暂不可用，请稍后重试", 1); return; }
                     count = 0; // Read availability remains protected by local concurrency admission.
                 }
