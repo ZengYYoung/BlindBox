@@ -14,7 +14,7 @@ import static org.mockito.Mockito.*;
 import static org.junit.jupiter.api.Assertions.*;
 
 class RateLimitTest {
-    private RedisCircuitBreaker circuit() {return new RedisCircuitBreaker("limit",1,Duration.ofSeconds(1),new SimpleMeterRegistry());}
+    private RedisCircuitBreaker circuit() {return new RedisCircuitBreaker("limit-"+java.util.UUID.randomUUID(),1,Duration.ofSeconds(1),new SimpleMeterRegistry());}
     @AfterEach void clear() {SecurityContextHolder.clearContext();}
     @Test void redisFailureFailsClosedForAuthenticatedWrites() throws Exception {
         StringRedisTemplate redis=mock(StringRedisTemplate.class);FilterChain chain=mock(FilterChain.class);

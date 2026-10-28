@@ -19,7 +19,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicLong;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
@@ -35,9 +34,9 @@ class RedisFaultIntegrationTest {
                 LettuceClientConfiguration.builder().commandTimeout(Duration.ofMillis(500)).build());
             factory.afterPropertiesSet();factory.start();awaitRedis(factory);
             StringRedisTemplate redis=new StringRedisTemplate(factory);redis.afterPropertiesSet();
-            var metrics=new SimpleMeterRegistry();AtomicLong clock=new AtomicLong();
-            var limit=new RedisCircuitBreaker("limit",1,Duration.ofSeconds(1),metrics,clock::get);
-            var cacheGate=new RedisCircuitBreaker("cache",1,Duration.ofSeconds(1),metrics,clock::get);
+            var metrics=new SimpleMeterRegistry();
+            var limit=new RedisCircuitBreaker("limit",1,Duration.ofSeconds(1),metrics);
+            var cacheGate=new RedisCircuitBreaker("cache",1,Duration.ofSeconds(1),metrics);
             var ingress=new IngressFilter(redis,new ObjectMapper(),true,metrics,4,6000,120,20,limit);
             var cache=new CatalogCache(redis,new ObjectMapper(),Runnable::run,metrics,cacheGate);
             FilterChain first=mock(FilterChain.class);
@@ -53,7 +52,7 @@ class RedisFaultIntegrationTest {
             ingress.doFilter(new MockHttpServletRequest("POST","/api/auth/login"),fast,mock(FilterChain.class));
             assertEquals(503,fast.getStatus());
             assertEquals(1,metrics.counter("blindbox.redis.circuit.calls","dependency","limit","outcome","rejected").count());
-            server=startRedis(port);awaitRedis(factory);clock.addAndGet(Duration.ofSeconds(1).toNanos());
+            server=startRedis(port);awaitRedis(factory);Thread.sleep(1100);
             FilterChain recovered=mock(FilterChain.class);MockHttpServletResponse ok=new MockHttpServletResponse();
             ingress.doFilter(new MockHttpServletRequest("POST","/api/auth/login"),ok,recovered);
             verify(recovered).doFilter(any(),any());assertEquals(200,ok.getStatus());

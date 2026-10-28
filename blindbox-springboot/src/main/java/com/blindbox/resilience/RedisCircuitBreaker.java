@@ -1,81 +1,97 @@
 package com.blindbox.resilience;
 
+import com.alibaba.csp.sentinel.Entry;
+import com.alibaba.csp.sentinel.SphU;
+import com.alibaba.csp.sentinel.Tracer;
+import com.alibaba.csp.sentinel.slots.block.BlockException;
+import com.alibaba.csp.sentinel.slots.block.RuleConstant;
+import com.alibaba.csp.sentinel.slots.block.degrade.DegradeRule;
+import com.alibaba.csp.sentinel.slots.block.degrade.DegradeRuleManager;
+import com.alibaba.csp.sentinel.slots.block.degrade.circuitbreaker.EventObserverRegistry;
 import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.Tag;
 import java.time.Duration;
-import java.util.function.LongSupplier;
+import java.util.List;
+import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Supplier;
 
-/** Per-instance circuit breaker. Only wrap Redis operations, never business validation. */
-public final class RedisCircuitBreaker {
-    private enum State { CLOSED, OPEN, HALF_OPEN }
+/** Sentinel protects Redis operations only; callers decide their read/write fallback. */
+public final class RedisCircuitBreaker implements AutoCloseable {
     public static final class OpenException extends RuntimeException {
-        public OpenException() { super("Redis circuit is open"); }
+        public OpenException(BlockException cause) { super("Sentinel blocked Redis resource", cause); }
     }
-
+    private final String resource;
     private final String name;
     private final MeterRegistry metrics;
-    private final int threshold;
-    private final long openNanos;
-    private final LongSupplier clock;
-    private State state = State.CLOSED;
-    private long generation;
-    private long openedAt;
-    private int failures;
-    private boolean probeInFlight;
+    private final String observerId = "blindbox-" + UUID.randomUUID();
+    private final AtomicInteger state = new AtomicInteger();
+    private int inFlight;
 
     public RedisCircuitBreaker(String name, int threshold, Duration openDuration, MeterRegistry metrics) {
-        this(name, threshold, openDuration, metrics, System::nanoTime);
-    }
-    public RedisCircuitBreaker(String name, int threshold, Duration openDuration, MeterRegistry metrics, LongSupplier clock) {
         if (threshold < 1 || openDuration.isZero() || openDuration.isNegative())
-            throw new IllegalArgumentException("Invalid Redis circuit breaker settings");
-        this.name = name; this.threshold = threshold; this.openNanos = openDuration.toNanos();
-        this.metrics = metrics; this.clock = clock;
-        metrics.gauge("blindbox.redis.circuit.state", java.util.List.of(io.micrometer.core.instrument.Tag.of("dependency", name)),
-            this, circuit -> circuit.stateValue());
+            throw new IllegalArgumentException("Invalid Sentinel circuit settings");
+        long millis = openDuration.toMillis();
+        if (millis < 1 || millis > 2_147_483_000L)
+            throw new IllegalArgumentException("Sentinel open duration must be 1..2147483000 ms");
+        int seconds = (int) ((millis + 999) / 1000);
+        this.name = name; this.resource = "blindbox.redis." + name; this.metrics = metrics;
+        DegradeRule rule = new DegradeRule(resource)
+            .setGrade(RuleConstant.DEGRADE_GRADE_EXCEPTION_COUNT)
+            .setCount(threshold - 1).setMinRequestAmount(1).setStatIntervalMs(1000).setTimeWindow(seconds);
+        if (!DegradeRuleManager.isValidRule(rule))
+            throw new IllegalArgumentException("Invalid Sentinel rule for " + resource);
+        boolean updated = DegradeRuleManager.setRulesForResource(resource, Set.of(rule));
+        // Sentinel returns false when an identical rule is already installed.
+        if (!updated && DegradeRuleManager.getRulesOfResource(resource).stream().noneMatch(existing ->
+            existing.getGrade() == rule.getGrade() && existing.getCount() == rule.getCount()
+                && existing.getTimeWindow() == rule.getTimeWindow()
+                && existing.getMinRequestAmount() == rule.getMinRequestAmount()
+                && existing.getStatIntervalMs() == rule.getStatIntervalMs()))
+            throw new IllegalStateException("Unable to register Sentinel rule for " + resource);
+        metrics.gauge("blindbox.redis.circuit.state", List.of(Tag.of("dependency", name)), state);
+        EventObserverRegistry.getInstance().addStateChangeObserver(observerId, (previous, next, changed, value) -> {
+            if (!resource.equals(changed.getResource())) return;
+            state.set(switch (next) { case CLOSED -> 0; case OPEN -> 1; case HALF_OPEN -> 2; });
+            metrics.counter("blindbox.redis.circuit.transitions", "dependency", name,
+                "state", next.name().toLowerCase(Locale.ROOT)).increment();
+        });
     }
 
     public <T> T execute(Supplier<T> operation) {
-        final long ticket;
-        final boolean probe;
         synchronized (this) {
-            if (state == State.OPEN && clock.getAsLong() - openedAt >= openNanos) {
-                state = State.HALF_OPEN; generation++; probeInFlight = false;
-                transition("half_open");
-            }
-            if (state == State.OPEN || (state == State.HALF_OPEN && probeInFlight)) {
+            // Do not let a completion from before OPEN end a newer HALF_OPEN probe.
+            if (state.get() == 1 && inFlight > 0) {
                 metrics.counter("blindbox.redis.circuit.calls", "dependency", name, "outcome", "rejected").increment();
-                throw new OpenException();
+                throw new OpenException(null);
             }
-            probe = state == State.HALF_OPEN;
-            if (probe) probeInFlight = true;
-            ticket = generation;
+            inFlight++;
         }
         try {
-            T value = operation.get();
-            synchronized (this) {
-                metrics.counter("blindbox.redis.circuit.calls", "dependency", name, "outcome", "success").increment();
-                if (ticket == generation) {
-                    if (probe && state == State.HALF_OPEN) {
-                        state = State.CLOSED; generation++; probeInFlight = false; failures = 0;
-                        transition("closed");
-                    } else if (!probe && state == State.CLOSED) failures = 0;
+            final Entry entry;
+            try { entry = SphU.entry(resource); }
+            catch (BlockException blocked) {
+                metrics.counter("blindbox.redis.circuit.calls", "dependency", name, "outcome", "rejected").increment();
+                throw new OpenException(blocked);
+            }
+            try (entry) {
+                try {
+                    T value = operation.get();
+                    metrics.counter("blindbox.redis.circuit.calls", "dependency", name, "outcome", "success").increment();
+                    return value;
+                } catch (RuntimeException | Error failure) {
+                    Tracer.traceEntry(failure, entry);
+                    metrics.counter("blindbox.redis.circuit.calls", "dependency", name, "outcome", "failure").increment();
+                    throw failure;
                 }
             }
-            return value;
-        } catch (RuntimeException | Error failure) {
-            synchronized (this) {
-                metrics.counter("blindbox.redis.circuit.calls", "dependency", name, "outcome", "failure").increment();
-                if (ticket == generation && (probe || (state == State.CLOSED && ++failures >= threshold))) {
-                    state = State.OPEN; generation++; openedAt = clock.getAsLong(); probeInFlight = false;
-                    transition("open");
-                }
-            }
-            throw failure;
+        } finally {
+            synchronized (this) { inFlight--; }
         }
     }
-    private void transition(String target) {
-        metrics.counter("blindbox.redis.circuit.transitions", "dependency", name, "state", target).increment();
+    @Override public void close() {
+        EventObserverRegistry.getInstance().removeStateChangeObserver(observerId);
     }
-    private synchronized int stateValue() { return switch (state) { case CLOSED -> 0; case OPEN -> 1; case HALF_OPEN -> 2; }; }
 }

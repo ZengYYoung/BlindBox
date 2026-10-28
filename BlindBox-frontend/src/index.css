@@ -1574,3 +1574,8 @@ footer > span {
     scroll-behavior: auto !important;
   }
 }
+
+.notification-panel { margin: 1.5rem 0; padding: 1.25rem 1.5rem; border: 1px solid #e8e1d9; border-radius: 16px; background: #fff; }
+.notification-panel ul { margin: 0; padding-left: 1.25rem; }
+.notification-panel li { padding: .35rem 0; }
+.notification-panel li small { margin-left: .5rem; color: #777; }

@@ -17,7 +17,7 @@ public class GlobalExceptionHandler {
     private static final Logger log=LoggerFactory.getLogger(GlobalExceptionHandler.class);
     @ExceptionHandler(BusinessException.class)
     public Result<?> business(BusinessException e,HttpServletResponse response) {
-        response.setStatus(e.getCode());if(e.getCode()==503) response.setHeader("Retry-After","1");return Result.error(e.getCode(),e.getMessage());
+        response.setStatus(e.getCode());if(e.getCode()==503) response.setHeader("Retry-After","1");return Result.error(e.getCode(),e.getMessage(),e.getErrorCode());
     }
     @ExceptionHandler({MethodArgumentNotValidException.class,ConstraintViolationException.class,
         HandlerMethodValidationException.class,HttpMessageNotReadableException.class,MethodArgumentTypeMismatchException.class,
@@ -32,7 +32,7 @@ public class GlobalExceptionHandler {
     }
     @ExceptionHandler(DuplicateKeyException.class)
     public Result<?> duplicate(Exception e,HttpServletResponse response) {
-        response.setStatus(409);return Result.error(409,"记录已存在，请使用原请求 ID 查询结果");
+        response.setStatus(409);return Result.error(409,"记录已存在，请使用原请求 ID 查询结果","REQUEST_CONFLICT");
     }
     @ExceptionHandler({CannotAcquireLockException.class,QueryTimeoutException.class,DataAccessResourceFailureException.class,
         org.springframework.transaction.CannotCreateTransactionException.class,

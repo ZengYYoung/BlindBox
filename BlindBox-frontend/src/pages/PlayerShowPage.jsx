@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import { useAuth } from "../auth";
 import api from "../services/api";
 import { date } from "../lib/format.mjs";
-import { Modal, Loading, Notice, Empty, Pagination } from "../components/UI";
+import { Modal, Loading, Notice, Empty, Pagination, SafeImage } from "../components/UI";
 function Comments({ id }) {
   const { user } = useAuth(),
     [page, setPage] = useState(1),
@@ -11,12 +11,13 @@ function Comments({ id }) {
   const [text, setText] = useState(""),
     [error, setError] = useState(""),
     [busy, setBusy] = useState(false);
+  const [loadError, setLoadError] = useState("");
   const load = useCallback(
     () =>
       api
         .get("/playershows/" + id + "/comments", { params: { page } })
-        .then(setData)
-        .catch((e) => setError(e.message)),
+        .then((value) => { setData(value); setLoadError(""); })
+        .catch(() => { setData(null); setLoadError("评论暂时不可用，请稍后重试。"); }),
     [id, page],
   );
   useEffect(() => {
@@ -39,6 +40,7 @@ function Comments({ id }) {
   };
   return (
     <div className="comments">
+      {loadError && <Notice danger>{loadError}<div className="button-row"><button className="button small secondary" onClick={load}>重试加载评论</button></div></Notice>}
       {error && <Notice danger>{error}</Notice>}
       {data?.list.map((c) => (
         <div key={c.id}>
@@ -196,7 +198,7 @@ export default function PlayerShowPage() {
               <div className="show-images">
                 {show.images.map((url, i) => (
                   <a key={url + i} href={url} target="_blank" rel="noreferrer">
-                    <img src={url} alt={"收藏图片 " + (i + 1)} loading="lazy" />
+                    <SafeImage src={url} alt={"收藏图片 " + (i + 1)} loading="lazy" />
                   </a>
                 ))}
               </div>

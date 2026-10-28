@@ -15,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 
 class IngressFilterTest {
-    private RedisCircuitBreaker circuit() {return new RedisCircuitBreaker("limit",1,Duration.ofSeconds(1),new SimpleMeterRegistry());}
+    private RedisCircuitBreaker circuit() {return new RedisCircuitBreaker("limit-"+java.util.UUID.randomUUID(),1,Duration.ofSeconds(1),new SimpleMeterRegistry());}
     @Test void ipQuotaRejectsBeforeJwtOrDatabaseChain() throws Exception {
         StringRedisTemplate redis=mock(StringRedisTemplate.class);FilterChain chain=mock(FilterChain.class);
         when(redis.execute(any(RedisScript.class),anyList(),any(Object[].class))).thenReturn(21L);

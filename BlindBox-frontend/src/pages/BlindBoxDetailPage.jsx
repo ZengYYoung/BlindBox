@@ -4,7 +4,8 @@ import api, { requestId } from "../services/api";
 import { useAuth } from "../auth";
 import { money, rarityName } from "../lib/format.mjs";
 import { previewEnabled, previewDetail, seriesNames } from "../lib/preview";
-import { Modal, Loading, Notice } from "../components/UI";
+import { Modal, Loading, Notice, SafeImage } from "../components/UI";
+import { shouldClearPendingDraw, retryAfterSeconds, drawFailureMessage } from "../lib/degradation.mjs";
 export default function BlindBoxDetailPage() {
   const { id } = useParams(),
     navigate = useNavigate(),
@@ -14,6 +15,12 @@ export default function BlindBoxDetailPage() {
     [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null),
     [pending, setPending] = useState(null);
+  const [retrySeconds, setRetrySeconds] = useState(0);
+  useEffect(() => {
+    if (retrySeconds <= 0) return;
+    const timer = setTimeout(() => setRetrySeconds((seconds) => Math.max(0, seconds - 1)), 1000);
+    return () => clearTimeout(timer);
+  }, [retrySeconds]);
   const storageKey = user ? "blindbox:pending-draw:" + user.id : null;
   const load = useCallback(async () => {
     const value = previewEnabled
@@ -63,11 +70,29 @@ export default function BlindBoxDetailPage() {
       navigate("/login", { state: { from: "/blindboxes/" + id } });
       return;
     }
-    if (previewEnabled || busy || (pending && pending.boxId !== Number(id)))
+    if (previewEnabled || busy || retrySeconds > 0) return;
+    let saved;
+    try {
+      const raw = localStorage.getItem(storageKey);
+      saved = raw ? JSON.parse(raw) : null;
+      if (saved && (!Number.isSafeInteger(saved.boxId) || saved.boxId < 1 ||
+          typeof saved.requestId !== "string" || !/^[A-Za-z0-9_-]{8,64}$/.test(saved.requestId)))
+        throw new Error("invalid saved request");
+    } catch {
+      setError("无法读取本地待确认请求，请恢复浏览器存储后再操作。");
       return;
-    const ticket = pending || { boxId: Number(id), requestId: requestId() };
+    }
+    const existing = saved || pending;
+    if (existing && existing.boxId !== Number(id)) {
+      setPending(existing);
+      setError("请先确认另一笔抽奖结果。");
+      return;
+    }
+    const isRetry = !!existing;
+    const ticket = existing || { boxId: Number(id), requestId: requestId() };
     // Persist before sending: network timeout does not mean the server rolled back.
-    localStorage.setItem(storageKey, JSON.stringify(ticket));
+    try { localStorage.setItem(storageKey, JSON.stringify(ticket)); }
+    catch { setError("无法保存请求，请恢复浏览器存储后再操作。"); return; }
     setPending(ticket);
     setBusy(true);
     setError("");
@@ -80,8 +105,9 @@ export default function BlindBoxDetailPage() {
         ),
       );
     } catch (e) {
-      if ([400, 409].includes(e.response?.status)) clearPending();
-      setError(e.message);
+      if (shouldClearPendingDraw(e, isRetry)) clearPending();
+      setRetrySeconds(retryAfterSeconds(e));
+      setError(drawFailureMessage(e, isRetry));
     } finally {
       setBusy(false);
     }
@@ -149,10 +175,10 @@ export default function BlindBoxDetailPage() {
             ) : (
               <button
                 className="button small secondary"
-                disabled={busy || previewEnabled}
+                disabled={busy || previewEnabled || retrySeconds > 0}
                 onClick={draw}
               >
-                同一请求重试
+                {retrySeconds > 0 ? `请等待 ${retrySeconds} 秒后重试` : "同一请求重试"}
               </button>
             )}
           </div>
@@ -160,7 +186,7 @@ export default function BlindBoxDetailPage() {
       )}
       <section className="detail-layout">
         <div className={"detail-picture " + box.series}>
-          <img src={box.image} alt={box.name} />
+          <SafeImage src={box.image} alt={box.name} />
           <span className="picture-caption">
             {seriesNames[box.series]} · KEEP THE JOY
           </span>
@@ -241,7 +267,7 @@ export default function BlindBoxDetailPage() {
               className={"prize-card" + (p.stock === 0 ? " sold-out" : "")}
               key={p.id}
             >
-              <img src={p.prizeImg} alt={p.prizeName} loading="lazy" />
+              <SafeImage src={p.prizeImg} alt={p.prizeName} loading="lazy" />
               <span className={"rarity " + p.rarity}>
                 {rarityName[p.rarity]}
               </span>
@@ -271,7 +297,7 @@ export default function BlindBoxDetailPage() {
             </button>
             <span className="eyebrow">YOUR LITTLE DISCOVERY</span>
             <h2>这份惊喜，属于你。</h2>
-            <img src={result.prizeImg} alt={result.prizeName} />
+            <SafeImage src={result.prizeImg} alt={result.prizeName} />
             <span className={"rarity " + result.rarity}>
               {rarityName[result.rarity]}
             </span>

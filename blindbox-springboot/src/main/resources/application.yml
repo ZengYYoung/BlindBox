@@ -9,6 +9,15 @@ server:
     max-connections: 512
     connection-timeout: 5s
 spring:
+  rabbitmq:
+    host: ${RABBITMQ_HOST:localhost}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}
+    virtual-host: ${RABBITMQ_VHOST:/}
+    connection-timeout: 2s
+    publisher-confirm-type: correlated
+    publisher-returns: true
   datasource:
     url: ${DB_URL:jdbc:mysql://localhost:3306/blindbox?useUnicode=true&characterEncoding=UTF-8&serverTimezone=Asia/Shanghai}
     username: ${DB_USER:blindbox}
@@ -39,6 +48,8 @@ mybatis:
     map-underscore-to-camel-case: true
     default-statement-timeout: 5
 app:
+  messaging:
+    enabled: ${RABBITMQ_ENABLED:false}
   jwt-secret: ${JWT_SECRET}
   jwt-hours: ${JWT_HOURS:2}
   demo-recharge: ${DEMO_RECHARGE_ENABLED:false}
@@ -54,6 +65,9 @@ app:
   upload-dir: ${UPLOAD_DIR:./uploads}
   cors-origins: ${CORS_ORIGINS:http://localhost:5173}
 management:
+  health:
+    rabbit:
+      enabled: ${RABBITMQ_ENABLED:false}
   endpoints:
     web:
       exposure:

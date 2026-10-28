@@ -12,6 +12,12 @@ export default function AccountPage() {
   const [amount, setAmount] = useState(""),
     [busy, setBusy] = useState(false),
     [notice, setNotice] = useState("");
+  const [notifications, setNotifications] = useState(null);
+  const [notificationError, setNotificationError] = useState("");
+  const loadNotifications = useCallback(() => {
+    setNotificationError("");
+    api.get("/user/notifications").then(setNotifications).catch(() => setNotificationError("通知暂时不可用"));
+  }, []);
   const storageKey = "blindbox:pending-recharge:" + user.id;
   const [pending, setPending] = useState(() => {
     try {
@@ -32,6 +38,7 @@ export default function AccountPage() {
     load();
     refresh();
   }, [load, refresh]);
+  useEffect(() => { loadNotifications(); }, [loadNotifications]);
   const recharge = async (e) => {
     e.preventDefault();
     setError("");
@@ -74,6 +81,12 @@ export default function AccountPage() {
       </div>
       {error && <Notice danger>{error}</Notice>}
       {notice && <Notice>{notice}</Notice>}
+      <section className="notification-panel">
+        <div className="section-heading"><h2>抽奖通知</h2><button className="button secondary" onClick={loadNotifications}>刷新</button></div>
+        {notificationError ? <Notice danger>{notificationError}</Notice> : notifications === null ? <Loading /> :
+          notifications.length ? <ul>{notifications.map((item) => <li key={item.id}>{item.content} <small>{String(item.createdAt || "").replace("T", " ")}</small></li>)}</ul> :
+          <p className="caption">暂无通知。抽奖成功后通知可能稍有延迟。</p>}
+      </section>
       <div className="account-grid">
         <section className="wallet-card">
           <span className="eyebrow">MY BALANCE</span>

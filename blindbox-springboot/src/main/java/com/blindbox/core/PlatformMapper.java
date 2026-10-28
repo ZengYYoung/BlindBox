@@ -53,6 +53,8 @@ public interface PlatformMapper {
     @Select("SELECT COUNT(*) FROM orders WHERE user_id=#{user}") long countOrders(int user);
     @Insert("INSERT INTO orders(user_id,blind_box_id,prize_id,request_id,price,status,blind_box_name,prize_name,prize_img,rarity) VALUES(#{userId},#{blindBoxId},#{prizeId},#{requestId},#{price},#{status},#{blindBoxName},#{prizeName},#{prizeImg},#{rarity})")
     @Options(useGeneratedKeys=true,keyProperty="id") int insertOrder(Order order);
+    @Insert("INSERT INTO outbox_event(event_id, order_id) VALUES(#{eventId}, #{orderId})")
+    int insertDrawEvent(@Param("eventId") String eventId, @Param("orderId") int orderId);
     @Insert("INSERT INTO wallet_ledger(user_id,request_id,type,amount,balance_after,order_id) VALUES(#{user},#{request},#{type},#{amount},#{after},#{order})")
     int wallet(@Param("user") int user,@Param("request") String request,@Param("type") String type,
                @Param("amount") long amount,@Param("after") long after,@Param("order") Integer order);

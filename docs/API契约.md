@@ -33,7 +33,7 @@
 | POST | /playershows/{id}/like | 用户 | 幂等点赞，likes/liked |
 | DELETE | /playershows/{id}/like | 用户 | 幂等取消，likes/liked |
 | GET | /playershows/{id}/comments | 公开 | 分页评论 |
-| POST | /playershows/{id}/comments | 用户 | content(1..1000) |
+| POST | /playershows/{id}/comment | 用户 | content(1..1000) |
 | POST | /images | 用户 | multipart file，真实PNG/JPEG，≤5MB；url |
 | GET | /admin/blindboxes | ADMIN | 包含全部商品状态，分页/search |
 | POST | /admin/blindboxes | ADMIN | 创建配置、必带key；商品默认DRAFT |
@@ -105,3 +105,9 @@
 上述为源码当前接口；权限及输入分支经过MockMvc测试，数据库字段映射和真实API链路还需接入后验证。所有历史Node接口返回结构与路径行为不再作为当前契约。
 
 列表的名称等元数据可缓存；库存、价格、状态每次批量查库。详情为同一SQL语句快照，成交按事务内锁定读重算；展示概率不保证稍后成交时仍相同。详见 [并发优化说明](并发优化说明.md)。
+
+抽奖错误响应可携带 `errorCode`：`DRAW_SOLD_OUT`、`DRAW_NOT_ON_SALE`、`DRAW_INSUFFICIENT_BALANCE`、`DRAW_BOX_NOT_FOUND` 是该次处理的明确拒绝；`REQUEST_CONFLICT` 或没有该字段的错误仍需保留原请求ID。对于重试，即使本次重试被明确拒绝，也不能据此断定此前超时的请求不再执行，前端仍保留原ID供查询。`code` 仍为HTTP状态码，`msg` 为显示信息。
+
+### 抽奖站内通知
+
+`GET /api/user/notifications`：需要登录，返回当前用户最近 30 条抽奖通知，每项包含 `id`、`orderId`、`content`、`createdAt`。通知异步生成，可能延迟；订单结果仍以抽奖接口及订单查询为准。未登录返回 401。

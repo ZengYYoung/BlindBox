@@ -29,10 +29,12 @@ class DrawTransactionServiceTest {
         when(db.insertOrder(any())).thenAnswer(inv->{Order o=inv.getArgument(0);o.setId(23);return 1;});
         when(db.wallet(7,"request-001","DRAW",-5900,4100,23)).thenReturn(1);
         when(db.stock(1,11,7,-1,2,"DRAW",23,"request-001")).thenReturn(1);
+        when(db.insertDrawEvent(anyString(),eq(23))).thenReturn(1);
     }
     @Test void successfulDrawWritesAllRecordsInLockOrder() {
         pool();successWrites();Order result=service.draw(7,1,"request-001").order();
         assertEquals(23,result.getId());assertEquals("海豚",result.getPrizeName());assertEquals(5900,result.getPrice());
+        verify(db).insertDrawEvent(anyString(),eq(23));
         InOrder sequence=inOrder(db);
         sequence.verify(db).lockUser(7);sequence.verify(db).findOrderByRequest(7,"request-001");
         sequence.verify(db).lockBox(1);sequence.verify(db).lockPrizes(1);sequence.verify(db).debit(7,5900);
@@ -42,6 +44,7 @@ class DrawTransactionServiceTest {
         Order prior=new Order();prior.setId(23);prior.setBlindBoxId(1);
         when(db.findOrderByRequest(7,"request-001")).thenReturn(prior);
         assertSame(prior,service.draw(7,1,"request-001").order());verify(db,never()).lockBox(anyInt());verify(db,never()).debit(anyInt(),anyLong());
+        verify(db,never()).insertDrawEvent(anyString(),anyInt());
     }
     @Test void sameKeyDifferentBoxRejects() {
         Order prior=new Order();prior.setBlindBoxId(2);when(db.findOrderByRequest(7,"request-001")).thenReturn(prior);
@@ -54,7 +57,13 @@ class DrawTransactionServiceTest {
     }
     @Test void insufficientBalanceStopsWrites() {
         pool();user.setBalance(100L);
-        assertThrows(BusinessException.class,()->service.draw(7,1,"request-001"));verify(db,never()).debit(anyInt(),anyLong());
+        BusinessException error=assertThrows(BusinessException.class,()->service.draw(7,1,"request-001"));
+        assertEquals("DRAW_INSUFFICIENT_BALANCE",error.getErrorCode());verify(db,never()).debit(anyInt(),anyLong());
+    }
+    @Test void soldOutHasExplicitTerminalCodeBeforeAnyWrite() {
+        pool();box.setStock(0);prize.setStock(0);when(lottery.total(List.of(prize))).thenReturn(0L);
+        BusinessException error=assertThrows(BusinessException.class,()->service.draw(7,1,"request-001"));
+        assertEquals("DRAW_SOLD_OUT",error.getErrorCode());verify(db,never()).debit(anyInt(),anyLong());
     }
     @Test void divergentPoolStopsWrites() {
         pool();box.setStock(4);

@@ -1,12 +1,15 @@
 package com.blindbox.common;
 
 import lombok.Data;
+import com.fasterxml.jackson.annotation.JsonInclude;
 
 @Data
 public class Result<T> {
     private int code;
     private String msg;
     private T data;
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    private String errorCode;
 
     private Result() {}
 
@@ -26,6 +29,12 @@ public class Result<T> {
 
     public static <T> Result<T> error(int code, String msg) {
         return new Result<>(code, msg, null);
+    }
+
+    public static <T> Result<T> error(int code, String msg, String errorCode) {
+        Result<T> result = new Result<>(code, msg, null);
+        result.errorCode = errorCode;
+        return result;
     }
 
     public static <T> Result<T> error(String msg) {

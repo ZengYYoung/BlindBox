@@ -100,3 +100,12 @@ export function Pagination({ page, pages, onChange }) {
     </div>
   );
 }
+
+export function SafeImage({ src, alt, ...props }) {
+  return (
+    <img {...props} src={src || "/placeholder.svg"} alt={alt} onError={(event) => {
+      if (event.currentTarget.getAttribute("src") !== "/placeholder.svg")
+        event.currentTarget.src = "/placeholder.svg";
+    }} />
+  );
+}

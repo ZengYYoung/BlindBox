@@ -4,6 +4,7 @@ import com.blindbox.common.*;
 import com.blindbox.core.*;
 import com.blindbox.core.Models.*;
 import com.blindbox.security.Principal;
+import com.blindbox.messaging.NotificationService;
 import jakarta.validation.Valid;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
@@ -15,9 +16,14 @@ import java.util.*;
 public class ApiController {
     private final PlatformMapper db;private final UserService users;private final CatalogService catalog;
     private final DrawService draws;private final CommunityService community;private final ImageService images;
+    private final NotificationService notifications;
     public ApiController(PlatformMapper db,UserService users,CatalogService catalog,DrawService draws,
-        CommunityService community,ImageService images) {
+        CommunityService community,ImageService images,NotificationService notifications) {
         this.db=db;this.users=users;this.catalog=catalog;this.draws=draws;this.community=community;this.images=images;
+        this.notifications=notifications;
+    }
+    @GetMapping("/user/notifications") public Result<?> notifications(@AuthenticationPrincipal Principal user) {
+        return Result.success(notifications.list(user.id()));
     }
     @PostMapping("/auth/register") public Result<?> register(@Valid @RequestBody Credentials request) {
         users.register(request);return Result.success("注册成功",Map.of());

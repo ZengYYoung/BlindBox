@@ -22,6 +22,7 @@ class SecurityIngressTest {
     @Autowired MockMvc mvc;
     @MockBean PlatformMapper db;@MockBean UserService users;@MockBean CatalogService catalog;
     @MockBean DrawService draws;@MockBean CommunityService community;@MockBean ImageService images;
+    @MockBean com.blindbox.messaging.NotificationService notifications;
     @MockBean JwtService jwt;@MockBean StringRedisTemplate redis;
     @Test void overloadedAuthenticatedWriteNeverParsesJwtOrBorrowsDatabase() throws Exception {
         when(redis.execute(any(RedisScript.class),anyList(),any(Object[].class))).thenReturn(121L);

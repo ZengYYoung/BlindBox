@@ -5,6 +5,7 @@ import com.blindbox.core.Models.*;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import java.util.List;
+import java.util.UUID;
 
 @Service
 public class DrawTransactionService {
@@ -27,13 +28,13 @@ public class DrawTransactionService {
             return new DrawResult(prior, true);
         }
         Box box=db.lockBox(boxId);
-        if(box==null) throw new BusinessException(404,"盲盒不存在");
-        if(!"ON_SALE".equals(box.getStatus())) throw new BusinessException(409,"盲盒未上架");
+        if(box==null) throw new BusinessException(404,"盲盒不存在","DRAW_BOX_NOT_FOUND");
+        if(!"ON_SALE".equals(box.getStatus())) throw new BusinessException(409,"盲盒未上架","DRAW_NOT_ON_SALE");
         List<Prize> prizes=db.lockPrizes(boxId);
         long total=lottery.total(prizes);
         if(total!=box.getStock()) throw new BusinessException(409,"库存校验失败，请联系管理员");
-        if(total==0) throw new BusinessException(409,"库存已售罄");
-        if(user.getBalance()<box.getPrice()) throw new BusinessException(409,"余额不足");
+        if(total==0) throw new BusinessException(409,"库存已售罄","DRAW_SOLD_OUT");
+        if(user.getBalance()<box.getPrice()) throw new BusinessException(409,"余额不足","DRAW_INSUFFICIENT_BALANCE");
         Prize selected=lottery.draw(prizes);
         requireOne(db.debit(userId,box.getPrice()),"余额扣减失败");
         requireOne(db.takePrize(selected.getId()),"奖品库存扣减失败");
@@ -46,6 +47,7 @@ public class DrawTransactionService {
         requireOne(db.insertOrder(order),"订单创建失败");
         requireOne(db.wallet(userId,request,"DRAW",-box.getPrice(),user.getBalance()-box.getPrice(),order.getId()),"资金流水失败");
         requireOne(db.stock(boxId,selected.getId(),userId,-1,selected.getStock()-1,"DRAW",order.getId(),request),"库存流水失败");
+        requireOne(db.insertDrawEvent(UUID.randomUUID().toString(),order.getId()),"事件记录失败");
         return new DrawResult(order, false);
     }
     public static void requireOne(int rows,String message) {

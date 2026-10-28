@@ -21,7 +21,7 @@ class CatalogCacheTest {
     Map<String,String> store;
     Queue<Runnable> tasks;
     CatalogCache cache;
-    private RedisCircuitBreaker circuit() {return new RedisCircuitBreaker("cache",1,Duration.ofSeconds(1),new SimpleMeterRegistry());}
+    private RedisCircuitBreaker circuit() {return new RedisCircuitBreaker("cache-"+java.util.UUID.randomUUID(),1,Duration.ofSeconds(1),new SimpleMeterRegistry());}
     @BeforeEach void setup() {
         redis=mock(StringRedisTemplate.class);
         @SuppressWarnings("unchecked") ValueOperations<String,String> ops=mock(ValueOperations.class);
